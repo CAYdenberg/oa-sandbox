@@ -227,19 +227,6 @@ function JournalList() {
   return obj;
 }
 
-function routeNewRequest(query) {
-  //add date filters if necessary
-  var params = { query : query,
-    minDate : $('input[name="date-begin"]').val(),
-    maxDate : $('input[name="date-end"]').val()
-  }
-  //add open access filters if necessary
-  params.oaOnly = true;
-  var req = PubmedRequest(params);
-  req.execute().done(function() {
-    render(req, req.response);
-  });
-}
 
 function modifyRequest($element) {
   if (!pubmedSearchGlobals.activeRequest) return false;
@@ -263,20 +250,8 @@ function modifyRequest($element) {
   });
 }
 
-function routeNewPage(pageNum) {
-  if (!pubmedSearchGlobals.activeRequest) return false;
-  var req = pubmedSearchGlobals.activeRequest;
-  if (!req.response.paginator.updatePage(pageNum)) return false;
-  if (typeof req.response.pages[pageNum] === 'undefined') {
-    req.execute(pageNum).done(function() {
-      render(req, req.response);
-    });
-  } else {
-    render(req, req.response);
-  }
-}
-
-function render(request, response) {
+function render(request) {
+  var response = request.response;
   var page = response.paginator.currentPage;
   var results = response.pages[page].results;
   var journals = request.journalList.allJournals;
@@ -289,43 +264,44 @@ function render(request, response) {
     totalPages: response.paginator.totalPages,
     onPageClicked: function(e, originalEvent, type, page) {
       e.stopImmediatePropagation();
-      routeNewPage(page);
+      if ( !request.response.paginator.updatePage(page) ) return false;
+      if (typeof request.response.pages[page] === 'undefined') {
+        request.execute(page).done(function() {
+          render(request);
+        });
+      } else {
+        render(request);
+      }
     },
   });
   $('#result-list').html(resultTemplate({results:results}));
   $('#journal-list').html(journalTemplate({journals:journals}));
-  $('#journal-list input').each(function() {
-    if (request.journalList.hasActive($(this).val())) {
-      $(this).prop('checked', true);
-    }
-  })
-  $('.search-refresh').unbind().change(function() {
-    modifyRequest( $(this) );
-  });
-}
 
-//get GET variable by name
-// got from http://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript
-function getParameterByName(name) {
-    name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
-    var regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
-    var results = regex.exec(location.search);
-    return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+  $('.filter').on('change', function() {
+    alert('on');
+  });
 }
 
 
 $( document ).ready(function() {  
   //on page load, get GET variable "query"
   var value = getParameterByName("query")
+  var currentRequest;
+  $('#search').val(value);
   if (value.length > 0) {
-    $('#search').val(value);
-    routeNewRequest(value);
+    currentRequest = new PubmedRequest({ query : value });
+    currentRequest.execute().done(function() {
+      render(currentRequest);
+    })
   }
-  $('#search-form').submit(function(event) {
-    event.preventDefault();
-    routeNewRequest( $('#search').val() );
-  });
-  $('.search-refresh').change(function() {
-    modifyRequest( $(this) );
-  });
+
+  
+  //get GET variable by name
+  // got from http://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript
+  function getParameterByName(name) {
+      name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+      var regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
+      var results = regex.exec(location.search);
+      return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+  }
 });
