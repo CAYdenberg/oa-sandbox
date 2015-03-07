@@ -15,7 +15,7 @@ function PubmedRequest(params) {
     query : false,
     minDate : false,
     maxDate : false,
-    oaOnly : false
+    oaOnly : true
   }
   obj.params = params;
   for ( option in defaults ) {
@@ -26,6 +26,31 @@ function PubmedRequest(params) {
   obj.journalList = JournalList();
   obj.response = false;
   obj.url = '';
+
+  obj.validDate = function(date) {
+    if (typeof date !== 'number' || date === NaN) return false;
+    if ( date < pubmedSearchGlobals.minDate ) return false;
+    if ( date > pubmedSearchGlobals.maxDate ) return false;
+    return true;
+  }
+
+  obj.setParam = function(key, value) {
+    if ( key === ('minDate' || 'maxDate') ) {
+      date = parseInt(value, 10);
+      if ( obj.validDate(date) ) {
+        obj.params[key] = date;
+      } else {
+        return false;
+      }
+    } else if ( key === 'oaOnly' ) {
+      if ( value === 'true' ) obj.params.oaOnly = true;
+      else if ( value === 'false' ) obj.params.oaOnly = false;
+      else return false;
+    }
+    //Search params have changed so destroy the results
+    obj.response = false;
+    return true;
+  }
 
   obj.buildSearchUrl = function() {
     //builds the url from the search parameters
@@ -93,7 +118,6 @@ function PubmedRequest(params) {
       });
     });
   }
-  pubmedSearchGlobals.activeRequest = obj;
   return obj;
 }
 
@@ -227,29 +251,6 @@ function JournalList() {
   return obj;
 }
 
-
-function modifyRequest($element) {
-  if (!pubmedSearchGlobals.activeRequest) return false;
-  var req = pubmedSearchGlobals.activeRequest;
-  var name = $element.attr('name');
-  var value = $element.val();
-  //fresh search: destroy the response;
-  req.response = false;
-  switch(name) {
-    case 'article_type':
-      if (value == 'full_only') req.params.oaOnly = true;
-      else req.params.oaOnly = false;
-      break;
-    case 'jrnlpub':
-      if ($element.prop('checked')) req.journalList.addToActive(value);
-      else req.journalList.removeFromActive($element.val());
-      break;
-  }
-  req.execute().done(function() {
-    render(req, req.response);
-  });
-}
-
 function render(request) {
   var response = request.response;
   var page = response.paginator.currentPage;
@@ -275,10 +276,26 @@ function render(request) {
     },
   });
   $('#result-list').html(resultTemplate({results:results}));
-  $('#journal-list').html(journalTemplate({journals:journals}));
+  $('#journal-list').append(journalTemplate({journals:journals}));
 
-  $('.filter').on('change', function() {
-    alert('on');
+  //bind listeners
+  $('.filter').off().on('change', function(e) {
+    var changed;
+    if ( $(this).attr('name') == 'journal' ) {
+      if ( $(this).prop('checked') ) {
+        changed = request.journalList.addToActive( $(this).val() );
+      } else {
+        changed = request.journalList.removeFromActive( $(this).val() );
+      }
+    } else {
+      changed = request.setParam( $(this).attr('name'), $(this).val() );
+    }
+    if (changed) {
+      request.response = false;
+      request.execute().done(function() {
+        render(request);
+      });
+    }
   });
 }
 
